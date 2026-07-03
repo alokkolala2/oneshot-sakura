@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import gsap from 'gsap'
+import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { useGSAP } from '@gsap/react'
 import SplitText from './SplitText.jsx'
 
@@ -15,16 +16,41 @@ export default function Still() {
 
   useGSAP(() => {
     const video = videoRef.current
-    video.pause()
 
-    const state = { target: 0, current: 0 }
-    const tick = () => {
-      const diff = state.target - state.current
-      if (Math.abs(diff) < 0.001) return
-      state.current += diff * 0.18
-      if (video.readyState >= 2) video.currentTime = state.current
+    // iOS/touch: currentTime seeking is unreliable → autoplay-loop instead.
+    const isTouch = window.matchMedia('(hover: none) and (pointer: coarse)').matches
+
+    let tick
+    if (isTouch) {
+      video.muted = true
+      video.loop = true
+      const play = () => video.play().catch(() => {})
+      play()
+      video.addEventListener('loadeddata', play, { once: true })
+    } else {
+      video.pause()
+      const state = { target: 0, current: 0 }
+      tick = () => {
+        const diff = state.target - state.current
+        if (Math.abs(diff) < 0.001) return
+        state.current += diff * 0.18
+        if (video.readyState >= 2) video.currentTime = state.current
+      }
+      gsap.ticker.add(tick)
+
+      ScrollTrigger.create({
+        trigger: ref.current,
+        start: 'top top',
+        end: '+=220%',
+        scrub: 0.4,
+        onUpdate: (self) => {
+          const duration = video.duration || 6
+          // video completes at 80% of the pin, then freezes on its last frame
+          const p = Math.min(self.progress / 0.8, 1)
+          state.target = p * (duration - 0.05)
+        },
+      })
     }
-    gsap.ticker.add(tick)
 
     const tl = gsap.timeline({
       scrollTrigger: {
@@ -33,12 +59,6 @@ export default function Still() {
         end: '+=220%',
         pin: '.still__pin',
         scrub: 0.4,
-        onUpdate: (self) => {
-          const duration = video.duration || 6
-          // video completes at 80% of the pin, then freezes on its last frame
-          const p = Math.min(self.progress / 0.8, 1)
-          state.target = p * (duration - 0.05)
-        },
       },
     })
 
@@ -54,7 +74,7 @@ export default function Still() {
       )
       .fromTo('.still__sub', { opacity: 0, y: 26 }, { opacity: 1, y: 0, ease: 'power1.out', duration: 0.12 }, 0.82)
 
-    return () => gsap.ticker.remove(tick)
+    return () => { if (tick) gsap.ticker.remove(tick) }
   }, { scope: ref })
 
   return (

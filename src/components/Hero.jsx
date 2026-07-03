@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { useGSAP } from '@gsap/react'
@@ -6,6 +6,18 @@ import SplitText from './SplitText.jsx'
 
 export default function Hero({ ready }) {
   const ref = useRef(null)
+  const videoRef = useRef(null)
+
+  // iOS: React's `muted` prop is unreliable — force it, then kick off autoplay.
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v) return
+    v.muted = true
+    v.setAttribute('muted', '')
+    const play = () => v.play().catch(() => {})
+    play()
+    v.addEventListener('loadeddata', play, { once: true })
+  }, [])
 
   // intro — waits for loader
   useGSAP(() => {
@@ -53,11 +65,13 @@ export default function Hero({ ready }) {
   return (
     <header className="hero" id="top" ref={ref}>
       <video
+        ref={videoRef}
         className="hero__video"
         autoPlay
         muted
         loop
         playsInline
+        preload="auto"
         src="/Sakura_grow_on_paper_202607021536.mp4"
       />
       <div className="hero__wash" />

@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import gsap from 'gsap'
+import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { useGSAP } from '@gsap/react'
 
 /**
@@ -14,40 +15,57 @@ export default function Scrub() {
 
   useGSAP(() => {
     const video = videoRef.current
-    video.pause()
 
-    const state = { target: 0, current: 0 }
+    // iOS/touch: seeking currentTime frame-by-frame is unreliable, so fall back
+    // to plain autoplay-loop. The foreground timeline still moves with scroll.
+    const isTouch = window.matchMedia('(hover: none) and (pointer: coarse)').matches
 
-    // lerp video time toward scroll target every frame
-    const tick = () => {
-      const diff = state.target - state.current
-      if (Math.abs(diff) < 0.001) return
-      state.current += diff * 0.18
-      if (video.readyState >= 2) video.currentTime = state.current
+    let tick
+    if (isTouch) {
+      video.muted = true
+      video.loop = true
+      const play = () => video.play().catch(() => {})
+      play()
+      video.addEventListener('loadeddata', play, { once: true })
+    } else {
+      video.pause()
+      const state = { target: 0, current: 0 }
+      tick = () => {
+        const diff = state.target - state.current
+        if (Math.abs(diff) < 0.001) return
+        state.current += diff * 0.18
+        if (video.readyState >= 2) video.currentTime = state.current
+      }
+      gsap.ticker.add(tick)
+
+      ScrollTrigger.create({
+        trigger: ref.current,
+        start: 'top top',
+        end: '+=220%',
+        scrub: 0.4,
+        onUpdate: (self) => {
+          const duration = video.duration || 6
+          state.target = self.progress * (duration - 0.05)
+        },
+      })
     }
-    gsap.ticker.add(tick)
 
-    // scrubbed foreground timeline — everything here moves WITH the scroll
-    const tl = gsap.timeline({
+    // foreground timeline — moves WITH scroll on every device
+    gsap.timeline({
       scrollTrigger: {
         trigger: ref.current,
         start: 'top top',
         end: '+=220%',
         pin: '.scrub__pin',
         scrub: 0.4,
-        onUpdate: (self) => {
-          const duration = video.duration || 6
-          state.target = self.progress * (duration - 0.05)
-        },
       },
     })
-
-    tl.fromTo('.scrub__video', { scale: 1.14 }, { scale: 1, ease: 'none' }, 0)
+      .fromTo('.scrub__video', { scale: 1.14 }, { scale: 1, ease: 'none' }, 0)
       .fromTo('.scrub__kanji', { yPercent: 46 }, { yPercent: -46, ease: 'none' }, 0)
       .fromTo('.scrub__caption', { y: 140, opacity: 0 }, { y: 0, opacity: 1, ease: 'power1.out', duration: 0.25 }, 0.05)
       .to('.scrub__caption', { y: -120, opacity: 0, ease: 'power1.in', duration: 0.25 }, 0.75)
 
-    return () => gsap.ticker.remove(tick)
+    return () => { if (tick) gsap.ticker.remove(tick) }
   }, { scope: ref })
 
   return (
